@@ -127,7 +127,6 @@ public class LogExportUtility {
           }
           data = JsonPath.read(response.getEntity().getContent(), "response.docs");
           for (Map dataMap : data) {
-            // do it
             String service_s = (String) dataMap.get("service_s");
             String kubernetes_pod_name_s = (String) dataMap.get("kubernetes_pod_name_s");
             String level_s = (String) dataMap.get("level_s");
