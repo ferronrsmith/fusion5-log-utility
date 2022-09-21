@@ -4,11 +4,14 @@ import com.jayway.jsonpath.JsonPath;
 import net.lingala.zip4j.ZipFile;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.http.Header;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.conn.ssl.TrustStrategy;
 import org.apache.http.conn.ssl.X509HostnameVerifier;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -37,7 +40,11 @@ public class LogExportUtility {
 
   @Option(name = "-exportTo", usage = "The path of the directory to export to.", required = true)
   private String exportTo;
-  @Option(name = "-cookieStr", usage = "The session cookie from Fusion api-gateway", required = true)
+  @Option(name = "-username", usage = "The username of which to authenticate. Either specify username and password, or you can specify cookieStr.")
+  private String username;
+  @Option(name = "-password", usage = "The password of which to authenticate. Either specify username and password, or you can specify cookieStr.")
+  private String password;
+  @Option(name = "-cookieStr", usage = "The session cookie from Fusion api-gateway. You can specify cookieStr, or alternatively you can specify username/password.")
   private String cookieStr;
   @Option(name = "-fusionUrl", usage = "The Fusion URL", required = true)
   private String fusionUrl;
@@ -70,11 +77,28 @@ public class LogExportUtility {
     BasicCookieStore cookieStore = new BasicCookieStore();
     SSLConnectionSocketFactory sslsf;
 
-    if (StringUtils.isNotBlank(cookieStr)) {
-      BasicClientCookie cookie = new BasicClientCookie("id", cookieStr);
-      cookie.setDomain(new URL(fusionUrl).getHost());
-      cookieStore.addCookie(cookie);
+    if (StringUtils.isBlank(cookieStr)) {
+      HttpPost post = new HttpPost(fusionUrl + "/api/session");
+      post.setEntity(new StringEntity("{\"username\":\"" + username + "\", \"password\":\"" + password + "\"}"));
+      post.setHeader("Content-Type", "application/json");
+      try (CloseableHttpClient client = HttpClients.custom()
+          .setDefaultCookieStore(cookieStore)
+          .build();
+           CloseableHttpResponse resp = client.execute(post)) {
+        if (resp.getStatusLine().getStatusCode() < 200 || resp.getStatusLine().getStatusCode() > 299) {
+          throw new Exception("Auth failed to get session. Status code: " + resp.getStatusLine());
+        }
+        Header[] headers = resp.getHeaders("Set-Cookie");
+        for (Header h : headers) {
+          cookieStr = h.getValue().split("=")[1];
+          break;
+        }
+        System.out.println("Authenticated.");
+      }
     }
+    BasicClientCookie cookie = new BasicClientCookie("id", cookieStr);
+    cookie.setDomain(new URL(fusionUrl).getHost());
+    cookieStore.addCookie(cookie);
 
     try {
       SSLContextBuilder sslContextBuilder = SSLContexts.custom();
@@ -120,7 +144,7 @@ public class LogExportUtility {
         System.out.println("next query: " + uri);
         HttpGet request = new HttpGet(
             uri);
-        request.setHeader("Content-Type", "application/json");
+        request.setHeader("Content-Type", "application/json;charset=utf-8");
         try (CloseableHttpResponse response = client.execute(request)) {
           if (response.getStatusLine().getStatusCode() > 299 || response.getStatusLine().getStatusCode() < 200) {
             throw new Exception("Unexpected status code " + response.getStatusLine());
@@ -139,7 +163,7 @@ public class LogExportUtility {
             String thread_s = (String) dataMap.get("thread_s");
             String stack_trace_txt = "";
             if (dataMap.get("stack_trace_txt") != null) {
-              stack_trace_txt = dataMap.get("stack_trace_txt") instanceof String ? (String) dataMap.get("stack_trace_txt") : String.valueOf(((List) dataMap.get("stack_trace_txt")).get(0));
+              stack_trace_txt = " " + (dataMap.get("stack_trace_txt") instanceof String ? (String) dataMap.get("stack_trace_txt") : String.valueOf(((List) dataMap.get("stack_trace_txt")).get(0)));
             }
 
             String caller_line_number_s = (String) dataMap.get("caller_line_number_s");
@@ -161,5 +185,6 @@ public class LogExportUtility {
     zipfile.addFolder(outDir);
     zipfile.close();
     System.out.println("Done. Zip successfully written to " + outputZipFile);
+
   }
 }
