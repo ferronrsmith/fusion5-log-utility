@@ -3,6 +3,7 @@ package com.lucidworks;
 import com.jayway.jsonpath.JsonPath;
 import net.lingala.zip4j.ZipFile;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -147,7 +148,8 @@ public class LogExportUtility {
         request.setHeader("Content-Type", "application/json;charset=utf-8");
         try (CloseableHttpResponse response = client.execute(request)) {
           if (response.getStatusLine().getStatusCode() > 299 || response.getStatusLine().getStatusCode() < 200) {
-            throw new Exception("Unexpected status code " + response.getStatusLine());
+            throw new Exception("Unexpected status code " + response.getStatusLine() + " - " + IOUtils.toString(response.getEntity()
+                .getContent(), StandardCharsets.UTF_8));
           }
           data = JsonPath.read(response.getEntity().getContent(), "response.docs");
           for (Map dataMap : data) {
